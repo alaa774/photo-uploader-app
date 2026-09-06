@@ -52,9 +52,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(30, 30, 30, 30)
         }
 
-        // لوجو الأسطورة
         val logo = ImageView(this).apply {
-            setImageResource(com.photouploader.app.R.drawable.logo)
+            setImageResource(R.drawable.logo)
             adjustViewBounds = true
             scaleType = ImageView.ScaleType.CENTER_INSIDE
         }
@@ -66,7 +65,6 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
         }
 
-        // اسم التطبيق
         val title = TextView(this).apply {
             text = "الأسطورة"
             textSize = 32f
@@ -75,7 +73,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 18, 0, 8)
         }
 
-        // حالة التحميل الصغيرة
         val loading = TextView(this).apply {
             text = "جاري التحميل…"
             textSize = 11f
@@ -83,10 +80,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
         }
 
-        layout.addView(
-            logo,
-            logoParams
-        )
+        layout.addView(logo, logoParams)
 
         layout.addView(
             title,
@@ -191,8 +185,7 @@ class MainActivity : AppCompatActivity() {
 
             try {
 
-                val resolver =
-                    contentResolver
+                val resolver = contentResolver
 
                 val projection = arrayOf(
                     MediaStore.Images.Media._ID,
