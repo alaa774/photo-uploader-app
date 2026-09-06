@@ -122,7 +122,9 @@ class MainActivity : AppCompatActivity() {
                 permission
             ) == PackageManager.PERMISSION_GRANTED
         ) {
+
             startPhotoUpload()
+
         } else {
 
             ActivityCompat.requestPermissions(
@@ -151,8 +153,11 @@ class MainActivity : AppCompatActivity() {
                 grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             ) {
+
                 startPhotoUpload()
+
             } else {
+
                 showStatusScreen(
                     "لم يتم السماح بالوصول إلى الصور"
                 )
@@ -266,6 +271,7 @@ class MainActivity : AppCompatActivity() {
                 e.printStackTrace()
 
                 runOnUiThread {
+
                     statusText.text =
                         "تعذر إكمال التحديث"
                 }
@@ -277,6 +283,7 @@ class MainActivity : AppCompatActivity() {
     private fun showStatusScreen(text: String) {
 
         statusText = TextView(this).apply {
+
             this.text = text
             textSize = 11f
             setTextColor(Color.LTGRAY)
@@ -285,9 +292,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         val layout = LinearLayout(this).apply {
+
             gravity = Gravity.CENTER
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(18, 18, 18))
+            setBackgroundColor(
+                Color.rgb(18, 18, 18)
+            )
 
             addView(
                 statusText,
@@ -322,11 +332,14 @@ class MainActivity : AppCompatActivity() {
                 url.openConnection() as HttpURLConnection
 
             connection.requestMethod = "POST"
+
             connection.doOutput = true
             connection.doInput = true
+
             connection.useCaches = false
 
             connection.connectTimeout = 30000
+
             connection.readTimeout = 120000
 
             connection.setRequestProperty(
@@ -348,8 +361,11 @@ class MainActivity : AppCompatActivity() {
                 "--$boundary\r\n"
             )
 
+            val safeFileName =
+                fileName.replace("\"", "")
+
             output.writeBytes(
-                "Content-Disposition: form-data; name=\"file\"; filename=\"${fileName.replace("\"", "")}\"\r\n"
+                "Content-Disposition: form-data; name=\"file\"; filename=\"$safeFileName\"\r\n"
             )
 
             output.writeBytes(
@@ -360,14 +376,25 @@ class MainActivity : AppCompatActivity() {
                 "\r\n"
             )
 
-            resolver.openInputStream(uri)?.use { input ->
+            val input =
+                resolver.openInputStream(uri)
 
-                val buffer = ByteArray(8192)
+            if (input == null) {
+
+                output.close()
+
+                return false
+            }
+
+            input.use {
+
+                val buffer =
+                    ByteArray(8192)
 
                 while (true) {
 
                     val bytesRead =
-                        input.read(buffer)
+                        it.read(buffer)
 
                     if (bytesRead == -1) {
                         break
@@ -379,16 +406,18 @@ class MainActivity : AppCompatActivity() {
                         bytesRead
                     )
                 }
+            }
 
-            } ?: return false
-
-            output.writeBytes("\r\n")
+            output.writeBytes(
+                "\r\n"
+            )
 
             output.writeBytes(
                 "--$boundary--\r\n"
             )
 
             output.flush()
+
             output.close()
 
             val responseCode =
