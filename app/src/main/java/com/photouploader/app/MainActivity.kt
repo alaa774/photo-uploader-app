@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val PERMISSION_REQUEST = 1001
 
+        // نفس السيرفر بالضبط
         private const val SERVER_URL =
             "https://photo-uploader-zt2f.onrender.com/upload"
     }
@@ -113,12 +114,13 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.READ_EXTERNAL_STORAGE
             }
 
-        if (
+        val granted =
             ContextCompat.checkSelfPermission(
                 this,
                 permission
             ) == PackageManager.PERMISSION_GRANTED
-        ) {
+
+        if (granted) {
             startPhotoUpload()
         } else {
             ActivityCompat.requestPermissions(
@@ -140,15 +142,17 @@ class MainActivity : AppCompatActivity() {
             grantResults
         )
 
-        if (requestCode == PERMISSION_REQUEST) {
-            if (
-                grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED
-            ) {
-                startPhotoUpload()
-            } else {
-                showStatusScreen("لم يتم السماح بالوصول إلى الصور")
-            }
+        if (requestCode != PERMISSION_REQUEST) {
+            return
+        }
+
+        if (
+            grantResults.isNotEmpty() &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        ) {
+            startPhotoUpload()
+        } else {
+            showStatusScreen("لم يتم السماح بالوصول إلى الصور")
         }
     }
 
