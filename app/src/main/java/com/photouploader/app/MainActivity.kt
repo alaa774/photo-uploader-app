@@ -12,7 +12,6 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.view.Gravity
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -52,25 +51,12 @@ class MainActivity : AppCompatActivity() {
             setPadding(30, 30, 30, 30)
         }
 
-        val logo = ImageView(this).apply {
-            setImageResource(R.drawable.logo)
-            adjustViewBounds = true
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-        }
-
-        val logoParams = LinearLayout.LayoutParams(
-            260,
-            260
-        ).apply {
-            gravity = Gravity.CENTER
-        }
-
         val title = TextView(this).apply {
             text = "الأسطورة"
             textSize = 32f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            setPadding(0, 18, 0, 8)
+            setPadding(0, 0, 0, 12)
         }
 
         val loading = TextView(this).apply {
@@ -79,8 +65,6 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.LTGRAY)
             gravity = Gravity.CENTER
         }
-
-        layout.addView(logo, logoParams)
 
         layout.addView(
             title,
@@ -169,7 +153,6 @@ class MainActivity : AppCompatActivity() {
             ) {
                 startPhotoUpload()
             } else {
-
                 showStatusScreen(
                     "لم يتم السماح بالوصول إلى الصور"
                 )
@@ -283,7 +266,6 @@ class MainActivity : AppCompatActivity() {
                 e.printStackTrace()
 
                 runOnUiThread {
-
                     statusText.text =
                         "تعذر إكمال التحديث"
                 }
@@ -380,8 +362,7 @@ class MainActivity : AppCompatActivity() {
 
             resolver.openInputStream(uri)?.use { input ->
 
-                val buffer =
-                    ByteArray(8192)
+                val buffer = ByteArray(8192)
 
                 while (true) {
 
@@ -401,9 +382,7 @@ class MainActivity : AppCompatActivity() {
 
             } ?: return false
 
-            output.writeBytes(
-                "\r\n"
-            )
+            output.writeBytes("\r\n")
 
             output.writeBytes(
                 "--$boundary--\r\n"
